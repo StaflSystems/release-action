@@ -44,22 +44,37 @@ export class Action {
             core.notice("Skipping action, release already exists and skipIfReleaseExists is enabled.")
             return
         }
-        
-        const releaseResponse = await this.createOrUpdateRelease();
-        const releaseData = releaseResponse.data
-        const releaseId = releaseData.id
-        const uploadUrl = releaseData.upload_url
-        
-        if (this.inputs.removeArtifacts) {
-            await this.artifactDestroyer.destroyArtifacts(releaseId)
-        }
-        
-        const artifacts = this.inputs.artifacts
-        if (artifacts.length > 0) {
-            await this.uploader.uploadArtifacts(artifacts, releaseId, uploadUrl)
-        }
 
-        this.outputs.applyReleaseData(releaseData)
+        for (var i=0; i < 2; ++i)
+        {
+            try {
+                const releaseResponse = await this.createOrUpdateRelease();
+                const releaseData = releaseResponse.data
+                const releaseId = releaseData.id
+                const uploadUrl = releaseData.upload_url
+                
+                if (this.inputs.removeArtifacts) {
+                    await this.artifactDestroyer.destroyArtifacts(releaseId)
+                }
+                
+                const artifacts = this.inputs.artifacts
+                if (artifacts.length > 0) {
+                    await this.uploader.uploadArtifacts(artifacts, releaseId, uploadUrl)
+                }
+
+                this.outputs.applyReleaseData(releaseData)
+                break // we were successful if we reach this line
+            } catch (error) {
+                if (new GithubError(error).hasErrorWithCode("already_exists") && this.inputs.allowUpdates)
+                {
+                    // Release must have been created after we checked for it.
+                    // We can try again.
+                    continue
+                }
+
+                throw error
+            }
+        }
     }
 
     private async createOrUpdateRelease(): Promise<CreateOrUpdateReleaseResponse> {
